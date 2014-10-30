@@ -29,7 +29,7 @@ class dhcpwin:
 	def SSHclose():
 		ssh.close()
 
-	def GETScopes(self,dhcpserver):
+	def GETScopes(self):
 		#print "Eseguo GETdhcpScopes"
 		#id della rete dello scope
 		get_scopes = 'netsh dhcp server show scope'
@@ -61,8 +61,8 @@ class dhcpwin:
 				print net_id
 
 
-	def GETdhcpRanges(self, dhcpserver, netid):
-		get_ranges = 'netsh dhcp server \\\\' + dhcpserver + ' scope ' + netid + ' show iprange'
+	def GETdhcpRanges(self, netid):
+		get_ranges = 'netsh dhcp server scope ' + netid + ' show iprange'
 		stdin, stdout, stderr = ssh.exec_command(get_ranges)
 		for line in stdout.read().splitlines():
 		#prende solo le righe con i -
@@ -75,8 +75,8 @@ class dhcpwin:
 					range_type = range_type.strip()
 					print (start_range_ip , end_range_ip)
 
-	def GETexclusions(self, dhcpserver, netid):
-		get_exclusions = 'netsh dhcp server \\\\' + dhcpserver + ' scope ' + netid + ' show excluderange'
+	def GETexclusions(self, netid):
+		get_exclusions = 'netsh dhcp server scope ' + netid + ' show excluderange'
 		stdin, stdout, stderr = ssh.exec_command(get_exclusions)
 		for line in stdout.read().splitlines():
 			#prende solo le righe con i -
@@ -88,8 +88,8 @@ class dhcpwin:
 					end_ex_ip = end_ex_ip.strip()
 					print (start_ex_ip, end_ex_ip)	
 	
-	def GETclients(self, dhcpserver, netid):
-		get_clients = 'netsh dhcp server \\\\' + dhcpserver + ' scope ' + netid + ' show clients'
+	def GETclients(self, netid):
+		get_clients = 'netsh dhcp server scope ' + netid + ' show clients'
 		stdin, stdout, stderr = ssh.exec_command(get_clients)
 		client_list = []
 		netmask_list = []
@@ -115,8 +115,8 @@ class dhcpwin:
 		return client_mac_list
 		return expiration_list
 
-	def GETfreehosts(self, dhcpserver, netid):
-		client_list = dhcpwin.GETclients( dhcpserver, netid)
+	def GETfreehosts(self, netid):
+		client_list = dhcpwin.GETclients(netid)
 		#print client_list[0]
 		get_scopes = 'netsh dhcp server show scope'
 		stdin, stdout, stderr = ssh.exec_command(get_scopes)
@@ -145,14 +145,14 @@ class dhcpwin:
 		print ('there are %s free ip') % i
 		print ('there are %s occupied ip') % r
 
-	def ADDdhcpentry(self,dhcpserver,netid,ip_addr,mac_addr,description):
-		add_reservation = 'netsh dhcp server \\\\' + dhcpserver + ' scope ' + netid + ' add reservedip ' + ip_addr + ' ' + mac_addr + ' ' + description + ' ' +description
+	def ADDdhcpentry(self,netid,ip_addr,mac_addr,description):
+		add_reservation = 'netsh dhcp server scope ' + netid + ' add reservedip ' + ip_addr + ' ' + mac_addr + ' ' + description + ' ' +description
 		stdin, stdout, stderr = ssh.exec_command(add_reservation)
 		for line in stdout.read().splitlines():
 			print line
 		
 
-	def DELETEdhcpentry(self,dhcpserver,netid,ip_addr,mac_addr):
+	def DELETEdhcpentry(self,netid,ip_addr,mac_addr):
 		delete_entry = 'netsh dhcp server scope ' + netid + ' delete reservedip ' + ip_addr + ' ' + mac_addr 
 		stdin, stdout, stderr = ssh.exec_command(delete_entry)
 		for line in stdout.read().splitlines():
