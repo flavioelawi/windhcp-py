@@ -1,9 +1,10 @@
 #!/usr/bin/python
-# coding=utf-8
+#coding=utf-8
 import paramiko
 import sys
 import os
 import argparse
+#import netaddr
 from netaddr import *
 import pprint
 
@@ -18,7 +19,7 @@ class windhcp:
 		ssh.connect(dhcpserver, 22, username, password)
 		return ssh
 
-	def SSHclose():
+	def SSHclose(self):
 		ssh.close()
 
 	def GETscopes(self, dhcpserver):
@@ -54,7 +55,7 @@ class windhcp:
 				state_list.append(state)
 				scope_name_list.append(scope_name)
 				comment_list.append(comment)
-		# print net_id_list
+		print net_id_list
 		return (net_id_list, netmask_list, state_list, scope_name_list, comment_list)
 
 	def GETdhcpRanges(self, dhcpserver, netid):
@@ -94,7 +95,7 @@ class windhcp:
 					start_ex_ip_list.append(start_ex_ip)
 					end_ex_ip_list.append(end_ex_ip)
 					print (start_ex_ip, end_ex_ip)
-		return (start_ex_ip_list, end_ex_ip_list)  
+		return (start_ex_ip_list, end_ex_ip_list)
 	
 	def GETclients(self, dhcpserver, netid):
 		get_clients = 'netsh dhcp server scope ' + netid + ' show clients'
@@ -104,22 +105,30 @@ class windhcp:
 		client_mac_list = []
 		expiration_list = []
 		client_type_list = []
+		fqdn_list = []
 		for line in stdout.read().splitlines():
 			# prende solo le righe con i -
 			if '-' in line:
 				# prende le righe con i punti (solo quelle con indirizzi ip)
 				if '.' in line:
-					(client_ip, netmask, client_mac, expiration, client_type) = line.split(' -')
-					client_ip = client_ip.strip()
-					netmask = netmask.strip()
-					client_mac = client_mac.strip()
-					expiration = expiration.strip()
-					client_type = client_type.strip()
-					client_ip_list.append(client_ip)
-					netmask_list.append(netmask)
-					client_mac_list.append(client_mac)
-					expiration_list.append(expiration)
-					client_type_list.append(client_type)
+					try:
+						(client_ip, netmask, client_mac, expiration, client_type) = line.split(' -')
+						client_ip = client_ip.strip()
+						netmask = netmask.strip()
+						client_mac = client_mac.strip()
+						expiration = expiration.strip()
+						client_type = client_type.strip()
+						#fqdn = fqdn.strip()
+						client_ip_list.append(client_ip)
+						netmask_list.append(netmask)
+						client_mac_list.append(client_mac)
+						expiration_list.append(expiration)
+						client_type_list.append(client_type)
+						#fqdn_list.append(fqdn)
+					except:
+						print 'Errore nel parsing'
+		#print fqdn_list
+		print client_ip_list
 		return (client_ip_list, netmask_list, client_mac_list, expiration_list, client_type_list)
 
 	def GETfreehosts(self, dhcpserver, netid):
@@ -128,8 +137,8 @@ class windhcp:
 		client_ip_list, netmask_list, client_mac_list, expiration_list, client_type_list = windhcp.GETclients(dhcpserver, netid)
 		# print client_list[0]
 		net_id_list, netmask_list, state_list, scope_name_list, comment_list = windhcp.GETscopes(dhcpserver)
-		i = 0
-		r = 0
+		free = 0
+		occupied = 0
 		match = net_id_list.index(netid)
 		netmask = IPAddress(netmask_list[match])  # converto netmask in un valore di tipo IPAddress per lavorarci
 		CIDR = netmask.bits().count('1')  # somma gli 1 del vaolre in bits del netmask per ottenere il CIDR della subnet selezionata
@@ -140,16 +149,28 @@ class windhcp:
 			try :
 				match = client_ip_list.index(ip)
 				occupied_ip_list.append(client_ip_list[match])
-				r = r + 1
+				occupied = occupied + 1
 			except:
 				free_ip_list.append(ip)
-				i = i + 1
+				free = free + 1
 		# print occupied_ip_list
 		# print free_ip_list
-		print ('there are %s free ip') % i
-		print ('there are %s occupied ip') % r
-		return (occupied_ip_list, free_ip_list)
+		#print free_ip_list
+		return (occupied_ip_list, free_ip_list,free,occupied)
 		
+	def GETallocablehosts(self,dhcpserver, netid):
+		i=0
+		start_ex_ip_list, end_ex_ip_list= self.GETexclusions(dhcpserver,netid)
+		occupied_ip_list, free_ip_list, occupied, free  = self.GETfreehosts(dhcpserver,netid)
+		for ip in iter_iprange(start_ex_ip_list[i],end_ex_ip_list[i]):
+			ip = str(ip)
+			try:
+				match = free_ip_list.index(ip)
+				free_ip_list.pop(match)
+			except:
+				pass
+		print free_ip_list
+		return free_ip_list
 
 	def ADDdhcpentry(self, dhcpserver, netid, ip_addr, mac_addr, description):
 		add_reservation = 'netsh dhcp server scope ' + netid + ' add reservedip ' + ip_addr + ' ' + mac_addr + ' ' + description + ' ' + description
@@ -202,6 +223,13 @@ if __name__ == "__main__":
 	parser_free.add_argument("netid", type=str, help="The scope to inspect (eg. 192.168.1.0)")
 	parser_free.set_defaults(which='free')
 
+	parser_allocable = subparsers.add_parser ('allocable', help='Get a list of allocable IPs in the scope (in excluded range)')
+	parser_allocable.add_argument('dhcpserver', type=str, help='Hostname or IP Address of the DHCP server')
+	parser_allocable.add_argument("username", type=str, help="Username for the SSH Connection")
+	parser_allocable.add_argument("password", type=str, help="Password for the SSH Connection")
+	parser_allocable.add_argument("netid", type=str, help="The scope to inspect (eg. 192.168.1.0)")
+	parser_allocable.set_defaults(which='allocable')
+
 	parser_delete = subparsers.add_parser ('delete', help='Delete an IP Address in the scope')
 	parser_delete.add_argument('dhcpserver', type=str, help='Hostname or IP Address of the DHCP server')
 	parser_delete.add_argument("username", type=str, help="Username for the SSH Connection")
@@ -236,6 +264,8 @@ if __name__ == "__main__":
 		windhcp.GETclients(args.dhcpserver, args.netid)
 	elif args.which is 'free':
 		windhcp.GETfreehosts(args.dhcpserver, args.netid)
+	elif args.which is 'allocable':
+		windhcp.GETallocablehosts(args.dhcpserver,args.netid)
 	elif args.which is 'delete':
 		windhcp.DELETEdhcpentry(args.dhcpserver, args.netid, args.ip_addr, args.mac_addr)
 	elif args.which is 'add':
